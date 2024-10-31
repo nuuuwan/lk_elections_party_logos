@@ -2,14 +2,15 @@ import os
 import time
 from functools import cached_property
 
-import cv2  # Ensure OpenCV is correctly imported
-import numpy as np
 import requests
 from bs4 import BeautifulSoup
-from PIL import Image
 from utils import Log
 
 from logos.PARTY_TO_SYMBOL import PARTY_TO_SYMBOL
+from utils_future import PNGFile
+
+# Ensure OpenCV is correctly imported
+
 
 log = Log("PartyLogo")
 
@@ -27,50 +28,14 @@ class PartyLogo:
 
         if not os.path.exists(PartyLogo.DIR_ORIGINAL_IMAGES):
             os.makedirs(PartyLogo.DIR_ORIGINAL_IMAGES)
-        return os.path.join(PartyLogo.DIR_ORIGINAL_IMAGES, f"{self.symbol}.png")
-
-    @cached_property
-    def thick_image_path(self):
-        dir_thick_images = os.path.join("images", "thick")
-        if not os.path.exists(dir_thick_images):
-            os.makedirs(dir_thick_images)
-        return os.path.join(dir_thick_images, f"{self.symbol}.png")
-
-    def generate_black_image(self):
-        return self.generate_norm_image("black", (0, 0, 0), (255, 255, 255))
+        return os.path.join(
+            PartyLogo.DIR_ORIGINAL_IMAGES, f"{self.symbol}.png"
+        )
 
     def generate_white_image(self):
         return self.generate_norm_image(
             "white", (255, 255, 255), (255, 255, 255)
         )
-
-    def thicken_edges(self, thickness=3):
-        image_path = self.original_image_path
-        image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-
-        # Check the number of channels in the image
-        if len(image.shape) == 2:  # Grayscale image
-            gray = image
-        elif len(image.shape) == 3 and image.shape[2] == 4:  # RGBA image
-            gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
-        else:  # RGB image
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        # Threshold the image to get a binary image
-        _, binary = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY_INV)
-
-        # Create a kernel for dilation
-        kernel = np.ones((thickness, thickness), np.uint8)
-
-        # Dilate the image to thicken the edges
-        dilated = cv2.dilate(binary, kernel, iterations=1)
-
-        # Invert the image back
-        thickened_edges = cv2.bitwise_not(dilated)
-
-        # Save the thickened image
-        cv2.imwrite(self.thick_image_path, thickened_edges)
-        log.info(f"Wrote {self.thick_image_path}")
 
     def generate_norm_image(
         self, norm_type, foreground_color, background_color
@@ -79,27 +44,12 @@ class PartyLogo:
         if not os.path.exists(dir_norm_images):
             os.makedirs(dir_norm_images)
 
-        image_path = os.path.join(dir_norm_images, f"{self.symbol}.png")
-        if os.path.exists(image_path):
-            log.warning(f"Already generated {image_path}.")
-            return
-
-        im = Image.open(self.thick_image_path)
-        im_resized = im.resize((PartyLogo.DIM, PartyLogo.DIM)).convert("RGBA")
-
-        rf, gf, bf = foreground_color
-        rb, gb, bb = background_color
-
-        im_norm = Image.new("RGBA", im_resized.size, (rb, gb, bb, 0))
-
-        for x in range(PartyLogo.DIM):
-            for y in range(PartyLogo.DIM):
-                r, g, b, _ = im_resized.getpixel((x, y))
-                if r + g + b < 128:
-                    im_norm.putpixel((x, y), (rf, gf, bf, 255))
-
-        im_norm.save(image_path)
-        log.info(f"Generated {image_path}.")
+        PNGFile(self.original_image_path).normalize(
+            os.path.join(dir_norm_images, f"{self.symbol}.png"),
+            PartyLogo.DIM,
+            foreground_color,
+            background_color,
+        )
 
     @staticmethod
     def get_symbol(file_name):
@@ -181,6 +131,5 @@ class PartyLogo:
 if __name__ == "__main__":
     PartyLogo.download_all()
     for party_logo in PartyLogo.list_all():
-        party_logo.thicken_edges()
-        party_logo.generate_black_image()
+
         party_logo.generate_white_image()
